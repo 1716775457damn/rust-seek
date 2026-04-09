@@ -1,0 +1,21 @@
+[package]
+name = "rust-seek"
+version = "0.1.0"
+edition = "2021"
+description = "A high-performance file and text search tool"
+
+[dependencies]
+eframe = "0.31"
+egui = "0.31"
+regex = "1"
+ignore = "0.4"
+memmap2 = "0.9"
+anyhow = "1"
+num_cpus = "1"
+rfd = "0.15"
+open = "5.3.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
