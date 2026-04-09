@@ -16,10 +16,12 @@ pub struct Match {
 
 pub struct SearchResult {
     pub path: String,
+    pub path_lc: String,    // lowercase path, pre-computed for filter matching
     pub win_path: String,
     pub icon: &'static str,
     pub matches: Vec<Match>,
     pub file_size: u64,
+    pub file_size_str: String, // pre-formatted size string
 }
 
 pub fn search_filename(path: &Path, pattern: &Regex) -> Option<SearchResult> {
@@ -33,7 +35,11 @@ pub fn search_filename(path: &Path, pattern: &Regex) -> Option<SearchResult> {
     let icon = file_icon(&display_path);
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
     Some(SearchResult {
-        icon, win_path, path: display_path, file_size,
+        icon, win_path,
+        path_lc: display_path.to_lowercase(),
+        path: display_path,
+        file_size_str: fmt_size(file_size),
+        file_size,
         matches: vec![Match {
             line_num: 0, line: name.into_owned(), ranges,
             context_before: None, context_after: None,
@@ -65,32 +71,46 @@ pub fn search_file(path: &Path, pattern: &Regex, max_filesize: u64) -> Result<Op
     if matches.is_empty() { return Ok(None); }
     let (display_path, win_path) = make_paths(path);
     let icon = file_icon(&display_path);
-    Ok(Some(SearchResult { path: display_path, win_path, icon, matches, file_size: file_len }))
+    Ok(Some(SearchResult {
+        path_lc: display_path.to_lowercase(),
+        path: display_path,
+        win_path, icon, matches,
+        file_size: file_len,
+        file_size_str: fmt_size(file_len),
+    }))
 }
 
 /// Compute both display path (forward slash) and win_path (backslash) in one pass
 fn make_paths(path: &Path) -> (String, String) {
     let raw = path.to_string_lossy();
-    let win = raw.as_ref().to_string();
-    if win.contains('\\') {
-        (win.replace('\\', "/"), win)
+    let s = raw.into_owned();
+    if s.contains('\\') {
+        (s.replace('\\', "/"), s)
     } else {
-        (win.clone(), win)
+        let display = s.clone();
+        (display, s)
     }
+}
+
+fn fmt_size(bytes: u64) -> String {
+    if bytes < 1024 { format!("{} B", bytes) }
+    else if bytes < 1024 * 1024 { format!("{:.1} KB", bytes as f64 / 1024.0) }
+    else { format!("{:.1} MB", bytes as f64 / 1024.0 / 1024.0) }
 }
 
 fn is_binary(data: &[u8], check_len: usize) -> bool {
     data[..data.len().min(check_len)].contains(&0)
 }
 
-/// Detect encoding from a small sample, then decode the full buffer once
-fn decode(bytes: &[u8]) -> String {
-    if std::str::from_utf8(bytes).is_ok() {
-        // SAFETY: just validated above — avoid copying the entire file
-        return unsafe { std::str::from_utf8_unchecked(bytes) }.to_owned();
+/// UTF-8: borrow directly (zero copy). Non-UTF-8: GBK lossy decode.
+fn decode(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => std::borrow::Cow::Borrowed(s),
+        Err(_) => {
+            let (cow, _, _) = GBK.decode(bytes);
+            std::borrow::Cow::Owned(cow.into_owned())
+        }
     }
-    let (cow, _, _) = GBK.decode(bytes);
-    cow.into_owned()
 }
 
 fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {

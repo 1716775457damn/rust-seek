@@ -38,15 +38,6 @@ impl Prefs {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
     }
-    #[allow(dead_code)]
-    fn save(&self) {
-        if let Some(p) = prefs_path() {
-            if let Ok(s) = serde_json::to_string(self) {
-                let _ = std::fs::create_dir_all(p.parent().unwrap());
-                let _ = std::fs::write(p, s);
-            }
-        }
-    }
 }
 
 fn prefs_path() -> Option<std::path::PathBuf> {
@@ -81,6 +72,7 @@ pub struct App {
     last_repaint: Instant,
     prefs: Prefs,
     needs_focus: bool,
+    last_title: String,     // cached window title to avoid per-frame format+send
 }
 
 impl Default for App {
@@ -120,6 +112,7 @@ impl Default for App {
             last_repaint: Instant::now(),
             prefs,
             needs_focus: true,
+            last_title: String::new(),
         }
     }
 }
@@ -166,7 +159,11 @@ impl App {
         self.total_matches = 0;
         self.result_capped = false;
         self.collapsed.clear();
+        self.collapsed.shrink_to_fit();
         self.expanded.clear();
+        self.expanded.shrink_to_fit();
+        self.filter.clear();
+        self.filter_lc.clear();
         self.live_count = 0;
         self.live_matches = 0;
         self.searching = true;
@@ -237,8 +234,12 @@ impl eframe::App for App {
                             self.live_matches += r.matches.len();
                             self.results.push(r);
                             self.live_count += 1;
-                        } else {
+                        } else if !self.result_capped {
                             self.result_capped = true;
+                            // Stop the background thread — no point continuing
+                            if let Some(ref c) = self.cancel {
+                                c.store(true, Ordering::Relaxed);
+                            }
                         }
                         got = true;
                     }
@@ -280,15 +281,18 @@ impl eframe::App for App {
             }
         }
 
-        // Update window title to reflect search state
+        // Update window title only when it changes
         let title = if self.searching {
-            format!("Rust Seek — 搜索中…")
+            "Rust Seek — 搜索中…".to_string()
         } else if !self.results.is_empty() {
             format!("Rust Seek — {}", self.status)
         } else {
             "Rust Seek".to_string()
         };
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        if title != self.last_title {
+            self.last_title = title.clone();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        }
 
         // Accept folder drag-and-drop onto the window
         ctx.input(|i| {
@@ -513,7 +517,7 @@ impl eframe::App for App {
 
             ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
                 for result in &self.results {
-                    if !self.filter_lc.is_empty() && !result.path.to_lowercase().contains(&self.filter_lc) {
+                    if !self.filter_lc.is_empty() && !result.path_lc.contains(&self.filter_lc) {
                         continue;
                     }
                     let is_collapsed = self.collapsed.contains(&result.path);
@@ -576,7 +580,7 @@ fn render_result(
                 ui.label(RichText::new(parent).color(Color32::DARK_GRAY).small());
             }
             if result.file_size > 0 {
-                ui.label(RichText::new(fmt_size(result.file_size)).color(Color32::DARK_GRAY).small());
+                ui.label(RichText::new(&result.file_size_str).color(Color32::DARK_GRAY).small());
             }
             l
         } else {
@@ -711,12 +715,6 @@ fn truncate_display(s: &str) -> &str {
         Some((i, _)) => &s[..i],
         None => s,
     }
-}
-
-fn fmt_size(bytes: u64) -> String {
-    if bytes < 1024 { format!("{} B", bytes) }
-    else if bytes < 1024 * 1024 { format!("{:.1} KB", bytes as f64 / 1024.0) }
-    else { format!("{:.1} MB", bytes as f64 / 1024.0 / 1024.0) }
 }
 
 fn reveal_in_explorer(path: &str) {
