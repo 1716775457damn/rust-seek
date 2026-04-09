@@ -71,10 +71,11 @@ pub fn search_file(path: &Path, pattern: &Regex, max_filesize: u64) -> Result<Op
 /// Compute both display path (forward slash) and win_path (backslash) in one pass
 fn make_paths(path: &Path) -> (String, String) {
     let raw = path.to_string_lossy();
-    if raw.contains('\\') {
-        (raw.replace('\\', "/"), raw.into_owned())
+    let win = raw.as_ref().to_string();
+    if win.contains('\\') {
+        (win.replace('\\', "/"), win)
     } else {
-        (raw.clone().into_owned(), raw.into_owned())
+        (win.clone(), win)
     }
 }
 
@@ -85,7 +86,7 @@ fn is_binary(data: &[u8], check_len: usize) -> bool {
 /// Detect encoding from a small sample, then decode the full buffer once
 fn decode(bytes: &[u8]) -> String {
     if std::str::from_utf8(bytes).is_ok() {
-        // SAFETY: just validated above
+        // SAFETY: just validated above — avoid copying the entire file
         return unsafe { std::str::from_utf8_unchecked(bytes) }.to_owned();
     }
     let (cow, _, _) = GBK.decode(bytes);
@@ -103,8 +104,8 @@ fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
             continue;
         }
         if pattern.find(line).is_none() {
-            // Reuse allocation via Rc — context_before of next match shares this
-            prev = Some(Arc::new(truncate(line)));
+            // Store raw line for context (no truncation needed — only display truncates)
+            prev = Some(Arc::new(line.to_string()));
             continue;
         }
         let ranges: Vec<(usize, usize)> = pattern.find_iter(line)
@@ -112,8 +113,9 @@ fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
             .collect();
         let display = truncate(line);
         let context_before = prev.clone();
+        // Context after: store raw, truncate only at render time if needed
         let context_after = lines_iter.peek()
-            .map(|(_, next)| Arc::new(truncate(next)));
+            .map(|(_, next)| Arc::new(next.to_string()));
         matches.push(Match {
             line_num: i + 1,
             line: display,

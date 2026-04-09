@@ -72,7 +72,9 @@ pub struct App {
     last_pat: String,       // cache key: pattern
     last_ic: bool,          // cache key: ignore_case
     last_fs: bool,          // cache key: fixed_string
-    filter: String,         // post-search filter on results
+    filter: String,
+    filter_lc: String,      // cached lowercase of filter, updated only when filter changes
+    pat_history_idx: Option<usize>, // for ↑↓ history navigation
     searching: bool,
     rx: Option<Receiver<SearchMsg>>,
     cancel: Option<Arc<AtomicBool>>,
@@ -110,6 +112,8 @@ impl Default for App {
             last_ic: false,
             last_fs: false,
             filter: String::new(),
+            filter_lc: String::new(),
+            pat_history_idx: None,
             searching: false,
             rx: None,
             cancel: None,
@@ -276,6 +280,16 @@ impl eframe::App for App {
             }
         }
 
+        // Update window title to reflect search state
+        let title = if self.searching {
+            format!("Rust Seek — 搜索中…")
+        } else if !self.results.is_empty() {
+            format!("Rust Seek — {}", self.status)
+        } else {
+            "Rust Seek".to_string()
+        };
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
+
         // Accept folder drag-and-drop onto the window
         ctx.input(|i| {
             if let Some(dropped) = i.raw.dropped_files.first() {
@@ -313,7 +327,9 @@ impl eframe::App for App {
                 }
                 egui::popup_below_widget(ui, path_id, &path_resp, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
                     ui.set_min_width(240.0);
-                    for h in self.prefs.path_history.clone() {
+                    // Only clone when popup is actually open
+                    let history: Vec<String> = self.prefs.path_history.iter().take(10).cloned().collect();
+                    for h in history {
                         if ui.selectable_label(false, &h).clicked() {
                             self.search_path = h;
                             ui.memory_mut(|m| m.close_popup());
@@ -385,14 +401,36 @@ impl eframe::App for App {
                 if pat_resp.gained_focus() && !self.prefs.pattern_history.is_empty() {
                     ui.memory_mut(|m| m.open_popup(pat_id));
                 }
+                // Arrow key history navigation
+                if pat_resp.has_focus() && !self.prefs.pattern_history.is_empty() {
+                    let up = ui.input(|i| i.key_pressed(egui::Key::ArrowUp));
+                    let down = ui.input(|i| i.key_pressed(egui::Key::ArrowDown));
+                    if up || down {
+                        let len = self.prefs.pattern_history.len();
+                        let idx = match self.pat_history_idx {
+                            None => if up { Some(0) } else { None },
+                            Some(i) => {
+                                if up { Some((i + 1).min(len - 1)) }
+                                else if i == 0 { None }
+                                else { Some(i - 1) }
+                            }
+                        };
+                        self.pat_history_idx = idx;
+                        if let Some(i) = idx {
+                            self.pattern = self.prefs.pattern_history[i].clone();
+                        }
+                    }
+                }
                 if pat_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     self.start_search();
                 }
                 egui::popup_below_widget(ui, pat_id, &pat_resp, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
                     ui.set_min_width(240.0);
-                    for h in self.prefs.pattern_history.clone() {
+                    let history: Vec<String> = self.prefs.pattern_history.iter().take(10).cloned().collect();
+                    for h in history {
                         if ui.selectable_label(false, &h).clicked() {
                             self.pattern = h;
+                            self.pat_history_idx = None;
                             ui.memory_mut(|m| m.close_popup());
                         }
                     }
@@ -462,7 +500,11 @@ impl eframe::App for App {
                         .desired_width(140.0));
                     if !self.filter.is_empty() && ui.small_button("✕").clicked() {
                         self.filter.clear();
+                        self.filter_lc.clear();
                     }
+                    // Update cached lowercase only when filter changes
+                    let new_lc = self.filter.to_lowercase();
+                    if new_lc != self.filter_lc { self.filter_lc = new_lc; }
                 });
             }
 
@@ -470,10 +512,8 @@ impl eframe::App for App {
             let mut toggle_expand: Option<String> = None;
 
             ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
-                let filter_lc = self.filter.to_lowercase();
                 for result in &self.results {
-                    // Apply post-search filter
-                    if !filter_lc.is_empty() && !result.path.to_lowercase().contains(&filter_lc) {
+                    if !self.filter_lc.is_empty() && !result.path.to_lowercase().contains(&self.filter_lc) {
                         continue;
                     }
                     let is_collapsed = self.collapsed.contains(&result.path);
@@ -585,7 +625,7 @@ fn render_result(
                 if last_shown_line != Some(before_line_num) {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{:>4}  ", before_line_num)).color(Color32::DARK_GRAY).monospace());
-                        ui.label(RichText::new(before.as_str()).color(Color32::DARK_GRAY).monospace());
+                        ui.label(RichText::new(truncate_display(before)).color(Color32::DARK_GRAY).monospace());
                     });
                 }
             }
@@ -600,7 +640,7 @@ fn render_result(
             if let Some(ref after) = m.context_after {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(format!("{:>4}  ", m.line_num + 1)).color(Color32::DARK_GRAY).monospace());
-                    ui.label(RichText::new(after.as_str()).color(Color32::DARK_GRAY).monospace());
+                    ui.label(RichText::new(truncate_display(after)).color(Color32::DARK_GRAY).monospace());
                 });
                 last_shown_line = Some(m.line_num + 1);
             }
@@ -662,6 +702,15 @@ fn render_highlighted(ui: &mut egui::Ui, line: &str, ranges: &[(usize, usize)], 
         });
     }
     ui.label(job);
+}
+
+fn truncate_display(s: &str) -> &str {
+    // Show at most 200 chars of context lines to avoid layout overflow
+    if s.len() <= 200 { return s; }
+    match s.char_indices().nth(200) {
+        Some((i, _)) => &s[..i],
+        None => s,
+    }
 }
 
 fn fmt_size(bytes: u64) -> String {
