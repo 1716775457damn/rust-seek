@@ -11,14 +11,14 @@
 
 ## ✨ Why Rust Seek?
 
-Most search tools are either too slow, too complex, or require a runtime. **Rust Seek** is a single `.exe` — no installation, no dependencies, no configuration. Just open it and search.
+Most search tools are either too slow, too complex, or require a runtime. **Rust Seek** is a single binary — no installation, no dependencies, no configuration. Just open it and search.
 
 - ⚡ **Parallel search engine** — uses every CPU core via the same engine powering `ripgrep`
 - 🗺️ **Memory-mapped I/O** — reads large files without loading them fully into RAM
 - 🎯 **Full regex support** — powered by Rust's battle-tested `regex` crate
 - 🖥️ **Native GUI** — built with `egui`, renders at 60fps with zero web bloat
 - 🌏 **Chinese file support** — reads both UTF-8 and GBK/GB2312 encoded files
-- 📦 **Zero dependencies for the user** — one binary, runs anywhere on Windows 10+ / macOS 12+
+- 📦 **Zero dependencies for the user** — one binary, runs anywhere on Windows / macOS / Linux
 
 ---
 
@@ -50,6 +50,7 @@ Switching modes instantly clears results — no mixing of file and text results.
 - **Line numbers** — green line numbers for match lines, grey for context
 - **Sorted output** — always sorted by file path
 - **File size** — shown next to each result in file name mode
+- **File type icons** — ⚙ exe, 📝 code, 🖼 image, 🎬 video, 📦 archive, etc.
 - **Collapse / expand** — fold individual files or all at once with one click
 - **Show more** — files with many matches show the first 5, expandable on demand
 - **Post-search filter** — type in the filter box to narrow results without re-searching
@@ -60,10 +61,12 @@ Switching modes instantly clears results — no mixing of file and text results.
 - **Drag & drop** — drag a folder onto the window to set the search path instantly
 - **Folder picker** — click 📁 or drag a folder to set the path
 - **Search history** — path and pattern history saved across restarts, click to reuse
+- **↑↓ history navigation** — press arrow keys in the search box to browse history
 - **Press Enter to search** — no need to reach for the mouse
 - **Cancel anytime** — click ⏹ or press `Esc` to stop a running search immediately
-- **Right-click menu** — on any result: open, reveal in Explorer, copy path, copy folder path
+- **Right-click menu** — on any result: open, reveal in Explorer/Finder, copy path, copy folder path
 - **Reveal in Explorer / Finder** — opens Windows Explorer or macOS Finder with the file selected
+- **Window title** — updates to show current search status
 - **Status bar** — total matches, files searched, and elapsed time
 
 ---
@@ -132,6 +135,8 @@ open "target/release/bundle/osx/Rust Seek.app"
 > ℹ️ On first launch macOS may show a security warning.  
 > Go to **System Settings → Privacy & Security** and click **Open Anyway**.
 
+> 🌏 CJK (Chinese/Japanese/Korean) fonts are embedded in the binary — no system font installation needed on any platform.
+
 ### Linux
 
 ```bash
@@ -163,7 +168,7 @@ The release build uses full LTO and `opt-level = 3`, producing a small, fast sin
 
 ```
 src/
-├── main.rs       # Entry point, window setup, CJK font loading
+├── main.rs       # Entry point, window setup, embedded CJK font
 ├── app.rs        # GUI (egui): toolbar, results, history, drag-drop, context menus
 └── searcher.rs   # Core engine: mmap I/O, regex, binary detection, GBK decoding
 ```
@@ -175,7 +180,7 @@ src/
 | File reading | `memmap2` | OS-level memory mapping, zero-copy on large files |
 | Pattern matching | `regex` | DFA-based, Unicode-aware, very fast |
 | Encoding detection | `encoding_rs` | UTF-8 + GBK/GB2312 fallback |
-| Folder dialog | `rfd` | Native Windows file picker |
+| Folder dialog | `rfd` | Native file picker |
 | Persistence | `serde_json` | Search history and preferences |
 
 ---
@@ -189,6 +194,7 @@ Rust Seek uses the same parallel directory walking strategy as `ripgrep`. On a m
 - Scales linearly with CPU cores
 - Context strings shared via `Arc` — zero extra heap allocation per match
 - Regex validation cached — no recompilation on every keystroke
+- Results sorted once at completion — O(n log n) instead of per-insert overhead
 
 ---
 
