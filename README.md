@@ -3,7 +3,7 @@
 > **A blazing-fast file & text search tool built with Rust — searches millions of files in milliseconds, with a clean native GUI.**
 
 ![Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust)
-![Platform](https://img.shields.io/badge/platform-Windows-blue?logo=windows)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Version](https://img.shields.io/badge/version-0.1.0-brightgreen)
 
@@ -18,7 +18,7 @@ Most search tools are either too slow, too complex, or require a runtime. **Rust
 - 🎯 **Full regex support** — powered by Rust's battle-tested `regex` crate
 - 🖥️ **Native GUI** — built with `egui`, renders at 60fps with zero web bloat
 - 🌏 **Chinese file support** — reads both UTF-8 and GBK/GB2312 encoded files
-- 📦 **Zero dependencies for the user** — one `.exe`, runs anywhere on Windows 10+
+- 📦 **Zero dependencies for the user** — one binary, runs anywhere on Windows 10+ / macOS 12+
 
 ---
 
@@ -63,7 +63,7 @@ Switching modes instantly clears results — no mixing of file and text results.
 - **Press Enter to search** — no need to reach for the mouse
 - **Cancel anytime** — click ⏹ or press `Esc` to stop a running search immediately
 - **Right-click menu** — on any result: open, reveal in Explorer, copy path, copy folder path
-- **Reveal in Explorer** — opens Windows Explorer with the file selected and highlighted
+- **Reveal in Explorer / Finder** — opens Windows Explorer or macOS Finder with the file selected
 - **Status bar** — total matches, files searched, and elapsed time
 
 ---
@@ -94,12 +94,52 @@ Switching modes instantly clears results — no mixing of file and text results.
 
 ## 📥 Download & Run
 
+### Windows
 1. Go to [Releases](../../releases)
 2. Download `rust-seek.exe`
 3. Double-click — that's it
 
 > ✅ No .NET, no Java, no Python, no Visual C++ Redistributable required.  
 > Works on Windows 10 and above.
+
+### macOS
+
+macOS does not allow running unsigned binaries by default. Build from source:
+
+```bash
+# 1. Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+
+# 2. Clone and build
+git clone https://github.com/1716775457damn/rust-seek.git
+cd rust-seek
+cargo build --release
+
+# 3. Run directly
+./target/release/rust-seek
+```
+
+**Optional: package as a `.app` bundle**
+
+```bash
+cargo install cargo-bundle
+cargo bundle --release
+# Opens as a proper macOS app:
+open "target/release/bundle/osx/Rust Seek.app"
+```
+
+> ℹ️ On first launch macOS may show a security warning.  
+> Go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+### Linux
+
+```bash
+git clone https://github.com/1716775457damn/rust-seek.git
+cd rust-seek
+cargo build --release
+./target/release/rust-seek
+```
 
 ---
 
@@ -111,7 +151,8 @@ Requires [Rust](https://rustup.rs/) (stable toolchain).
 git clone https://github.com/1716775457damn/rust-seek.git
 cd rust-seek
 cargo build --release
-# Binary: target/release/rust-seek.exe
+# Windows: target/release/rust-seek.exe
+# macOS/Linux: target/release/rust-seek
 ```
 
 The release build uses full LTO and `opt-level = 3`, producing a small, fast single binary.
