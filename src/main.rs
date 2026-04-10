@@ -12,19 +12,19 @@ fn main() -> eframe::Result {
     };
     eframe::run_native("Rust Seek", options, Box::new(|cc| {
         let mut fonts = egui::FontDefinitions::default();
-        if let Ok(bytes) = std::fs::read("C:\\Windows\\Fonts\\msyh.ttc") {
-            fonts.font_data.insert(
-                "msyh".to_owned(),
-                egui::FontData::from_owned(bytes).into(),
-            );
-            fonts.families
-                .entry(egui::FontFamily::Proportional)
-                .or_default()
-                .push("msyh".to_owned());
-            fonts.families
-                .entry(egui::FontFamily::Monospace)
-                .or_default()
-                .push("msyh".to_owned());
+        // Try platform CJK fonts
+        let cjk_font_paths: &[&str] = &[
+            "C:\\Windows\\Fonts\\msyh.ttc",           // Windows: Microsoft YaHei
+            "/System/Library/Fonts/PingFang.ttc",     // macOS: PingFang
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", // Linux
+        ];
+        for path in cjk_font_paths {
+            if let Ok(bytes) = std::fs::read(path) {
+                fonts.font_data.insert("cjk".to_owned(), egui::FontData::from_owned(bytes).into());
+                fonts.families.entry(egui::FontFamily::Proportional).or_default().push("cjk".to_owned());
+                fonts.families.entry(egui::FontFamily::Monospace).or_default().push("cjk".to_owned());
+                break;
+            }
         }
         cc.egui_ctx.set_fonts(fonts);
         Ok(Box::new(app::App::default()))

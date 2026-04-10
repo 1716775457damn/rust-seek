@@ -4,6 +4,13 @@ version = "0.1.0"
 edition = "2021"
 description = "A high-performance file and text search tool"
 
+[package.metadata.bundle]
+name = "Rust Seek"
+identifier = "com.rustseek.app"
+icon = []
+copyright = "MIT 2025"
+category = "public.app-category.utilities"
+
 [dependencies]
 eframe = "0.31"
 egui = "0.31"

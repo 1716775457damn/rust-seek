@@ -718,9 +718,22 @@ fn truncate_display(s: &str) -> &str {
 }
 
 fn reveal_in_explorer(path: &str) {
-    // /select, and the path must be a single argument — splitting them breaks explorer
-    let arg = format!("/select,{}", path);
-    let _ = std::process::Command::new("explorer").arg(arg).spawn();
+    #[cfg(target_os = "windows")]
+    {
+        let arg = format!("/select,{}", path);
+        let _ = std::process::Command::new("explorer").arg(arg).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // Linux: open parent directory
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+        }
+    }
 }
 
 fn push_history(history: &mut Vec<String>, value: String) {
