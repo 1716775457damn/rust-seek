@@ -670,40 +670,31 @@ fn render_highlighted(ui: &mut egui::Ui, line: &str, ranges: &[(usize, usize)], 
     use egui::FontId;
 
     let mut job = LayoutJob::default();
-    let font = if monospace {
-        FontId::monospace(14.0)
-    } else {
-        FontId::proportional(12.0)
-    };
+    let font = if monospace { FontId::monospace(14.0) } else { FontId::proportional(12.0) };
     let normal_color = if monospace { Color32::LIGHT_GRAY } else { Color32::GRAY };
+    // Pre-build the two TextFormat variants to avoid repeated construction per segment
+    let fmt_normal = TextFormat { font_id: font.clone(), color: normal_color, ..Default::default() };
+    let fmt_highlight = TextFormat {
+        font_id: font,
+        color: Color32::BLACK,
+        background: Color32::from_rgb(255, 200, 0),
+        ..Default::default()
+    };
 
     let mut cursor = 0;
     for &(start, end) in ranges {
         let start = start.min(line.len());
         let end = end.min(line.len());
         if start > cursor {
-            job.append(&line[cursor..start], 0.0, TextFormat {
-                font_id: font.clone(),
-                color: normal_color,
-                ..Default::default()
-            });
+            job.append(&line[cursor..start], 0.0, fmt_normal.clone());
         }
         if start < end {
-            job.append(&line[start..end], 0.0, TextFormat {
-                font_id: font.clone(),
-                color: Color32::BLACK,
-                background: Color32::from_rgb(255, 200, 0),
-                ..Default::default()
-            });
+            job.append(&line[start..end], 0.0, fmt_highlight.clone());
         }
         cursor = end;
     }
     if cursor < line.len() {
-        job.append(&line[cursor..], 0.0, TextFormat {
-            font_id: font.clone(),
-            color: normal_color,
-            ..Default::default()
-        });
+        job.append(&line[cursor..], 0.0, fmt_normal);
     }
     ui.label(job);
 }

@@ -83,12 +83,14 @@ pub fn search_file(path: &Path, pattern: &Regex, max_filesize: u64) -> Result<Op
 /// Compute both display path (forward slash) and win_path (backslash) in one pass
 fn make_paths(path: &Path) -> (String, String) {
     let raw = path.to_string_lossy();
-    let s = raw.into_owned();
-    if s.contains('\\') {
-        (s.replace('\\', "/"), s)
+    // Only allocate a replacement string when backslashes are present
+    if raw.contains('\\') {
+        let display = raw.replace('\\', "/");
+        let win = raw.into_owned();
+        (display, win)
     } else {
-        let display = s.clone();
-        (display, s)
+        let s = raw.into_owned();
+        (s.clone(), s)
     }
 }
 
@@ -133,9 +135,10 @@ fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
             .collect();
         let display = truncate(line);
         let context_before = prev.clone();
-        // Context after: store raw, truncate only at render time if needed
         let context_after = lines_iter.peek()
             .map(|(_, next)| Arc::new(next.to_string()));
+        // Reuse the same Arc for prev — avoids a second allocation for the raw line
+        let line_arc = Arc::new(line.to_string());
         matches.push(Match {
             line_num: i + 1,
             line: display,
@@ -143,7 +146,7 @@ fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
             context_before,
             context_after,
         });
-        prev = Some(Arc::new(line.to_string()));
+        prev = Some(line_arc);
     }
     matches
 }
