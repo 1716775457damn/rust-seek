@@ -672,7 +672,6 @@ fn render_highlighted(ui: &mut egui::Ui, line: &str, ranges: &[(usize, usize)], 
     let mut job = LayoutJob::default();
     let font = if monospace { FontId::monospace(14.0) } else { FontId::proportional(12.0) };
     let normal_color = if monospace { Color32::LIGHT_GRAY } else { Color32::GRAY };
-    // Pre-build the two TextFormat variants to avoid repeated construction per segment
     let fmt_normal = TextFormat { font_id: font.clone(), color: normal_color, ..Default::default() };
     let fmt_highlight = TextFormat {
         font_id: font,
@@ -681,20 +680,31 @@ fn render_highlighted(ui: &mut egui::Ui, line: &str, ranges: &[(usize, usize)], 
         ..Default::default()
     };
 
-    let mut cursor = 0;
+    // ranges are char offsets; collect chars once for O(1) slicing.
+    let chars: Vec<char> = line.chars().collect();
+    let char_to_byte: Vec<usize> = line.char_indices().map(|(b, _)| b).collect();
+    let total_chars = chars.len();
+
+    let char_slice = |from: usize, to: usize| -> &str {
+        let b_start = char_to_byte.get(from).copied().unwrap_or(line.len());
+        let b_end   = char_to_byte.get(to).copied().unwrap_or(line.len());
+        &line[b_start..b_end]
+    };
+
+    let mut cursor = 0usize; // char cursor
     for &(start, end) in ranges {
-        let start = start.min(line.len());
-        let end = end.min(line.len());
+        let start = start.min(total_chars);
+        let end   = end.min(total_chars);
         if start > cursor {
-            job.append(&line[cursor..start], 0.0, fmt_normal.clone());
+            job.append(char_slice(cursor, start), 0.0, fmt_normal.clone());
         }
         if start < end {
-            job.append(&line[start..end], 0.0, fmt_highlight.clone());
+            job.append(char_slice(start, end), 0.0, fmt_highlight.clone());
         }
         cursor = end;
     }
-    if cursor < line.len() {
-        job.append(&line[cursor..], 0.0, fmt_normal);
+    if cursor < total_chars {
+        job.append(char_slice(cursor, total_chars), 0.0, fmt_normal);
     }
     ui.label(job);
 }

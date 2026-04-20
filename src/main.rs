@@ -1,7 +1,16 @@
 mod app;
 mod searcher;
 
-fn main() -> eframe::Result {
+fn main() {
+    // On macOS, if the default Metal/wgpu backend fails (e.g. older Intel Mac,
+    // Rosetta), fall back to OpenGL so the window actually appears.
+    #[cfg(target_os = "macos")]
+    if std::env::var("WGPU_BACKEND").is_err() {
+        // Try Metal first; wgpu will fall back automatically on failure.
+        // Setting this env var makes the fallback explicit and debuggable.
+        unsafe { std::env::set_var("WGPU_BACKEND", "metal,gl"); }
+    }
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Rust Seek")
@@ -10,10 +19,8 @@ fn main() -> eframe::Result {
             .with_icon(make_icon()),
         ..Default::default()
     };
-    eframe::run_native("Rust Seek", options, Box::new(|cc| {
+    if let Err(e) = eframe::run_native("Rust Seek", options, Box::new(|cc| {
         let mut fonts = egui::FontDefinitions::default();
-
-        // Embed Noto Sans SC for guaranteed CJK support on all platforms
         let cjk_bytes: &[u8] = include_bytes!("../assets/NotoSansSC-Regular.otf");
         fonts.font_data.insert(
             "cjk".to_owned(),
@@ -29,7 +36,18 @@ fn main() -> eframe::Result {
             .push("cjk".to_owned());
         cc.egui_ctx.set_fonts(fonts);
         Ok(Box::new(app::App::default()))
-    }))
+    })) {
+        eprintln!("rust-seek failed to start: {e}");
+        // Show a visible error dialog on macOS instead of silently exiting
+        #[cfg(target_os = "macos")]
+        {
+            let msg = format!("rust-seek failed to start:\n{e}");
+            let _ = std::process::Command::new("osascript")
+                .args(["-e", &format!("display alert \"Rust Seek\" message \"{msg}\"")])
+                .spawn();
+        }
+        std::process::exit(1);
+    }
 }
 
 /// 32×32 RGBA magnifying glass icon

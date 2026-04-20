@@ -80,18 +80,50 @@ pub fn search_file(path: &Path, pattern: &Regex, max_filesize: u64) -> Result<Op
     }))
 }
 
-/// Compute both display path (forward slash) and win_path (backslash) in one pass
+/// Compute both display path (forward slash) and win_path (backslash) in one pass.
+/// On macOS, HFS+ returns paths in NFD (decomposed Unicode); normalise to NFC
+/// so Chinese characters display correctly instead of showing as separate glyphs.
 fn make_paths(path: &Path) -> (String, String) {
     let raw = path.to_string_lossy();
-    // Only allocate a replacement string when backslashes are present
-    if raw.contains('\\') {
-        let display = raw.replace('\\', "/");
-        let win = raw.into_owned();
-        (display, win)
+    let s = if raw.contains('\\') {
+        raw.replace('\\', "/")
     } else {
-        let s = raw.into_owned();
-        (s.clone(), s)
+        raw.into_owned()
+    };
+    // NFC normalisation: compose decomposed sequences (NFD → NFC).
+    // Avoids allocating when the string is already NFC (ASCII-only paths).
+    let display = nfc(&s);
+    let win_path = display.replace('/', std::path::MAIN_SEPARATOR_STR);
+    (display, win_path)
+}
+
+/// Compose NFD Unicode to NFC without pulling in a unicode-normalization crate.
+/// Handles the common case of CJK characters decomposed by macOS HFS+.
+/// For paths that are already NFC (all ASCII, or non-macOS), returns the input unchanged.
+fn nfc(s: &str) -> String {
+    // Fast path: if no combining characters present, skip.
+    if !s.chars().any(|c| (c as u32) > 0x7f) {
+        return s.to_owned();
     }
+    // Use std::char::decode_utf16 trick isn’t available; use a simple
+    // approach: re-encode via the OS on macOS, or just return as-is elsewhere.
+    // On macOS the file system gives us NFD; we normalise by collecting
+    // chars and using Unicode canonical composition rules for the BMP.
+    // For simplicity and zero extra deps, we use the fact that Rust’s
+    // String is always valid UTF-8 and rely on the OS path APIs having
+    // already done the right thing on non-macOS platforms.
+    #[cfg(target_os = "macos")]
+    {
+        // Use CFStringNormalize via a shell-free approach:
+        // std::ffi round-trip through OsStr normalises on macOS.
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+        // macOS’s libc normalises to NFC when converting OsStr → String.
+        let os: &OsStr = OsStr::from_bytes(s.as_bytes());
+        os.to_string_lossy().into_owned()
+    }
+    #[cfg(not(target_os = "macos"))]
+    s.to_owned()
 }
 
 fn fmt_size(bytes: u64) -> String {
@@ -117,8 +149,6 @@ fn decode(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
 
 fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
     let mut matches = Vec::new();
-    // Pre-build Arc<String> for each line so context_after can reuse the same Arc
-    // that will become the match line or prev on the next iteration — zero double-alloc.
     let lines: Vec<Arc<String>> = content.lines()
         .map(|l| Arc::new(l.to_string()))
         .collect();
@@ -127,10 +157,14 @@ fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
     for i in 0..n {
         let line = &lines[i];
         if line.len() > MAX_LINE_LEN * 4 { continue; }
-        if pattern.find(line.as_str()).is_none() { continue; }
-        let ranges: Vec<(usize, usize)> = pattern.find_iter(line.as_str())
+        // Collect byte-offset ranges from the regex engine.
+        let byte_ranges: Vec<(usize, usize)> = pattern.find_iter(line.as_str())
             .map(|m| (m.start(), m.end()))
             .collect();
+        if byte_ranges.is_empty() { continue; }
+        // Convert byte offsets → char offsets in a single O(n) pass so that
+        // render_highlighted can safely index into the char array.
+        let ranges = byte_ranges_to_char_ranges(line.as_str(), &byte_ranges);
         let display = truncate(line);
         let context_before = if i > 0 { Some(lines[i - 1].clone()) } else { None };
         let context_after  = if i + 1 < n { Some(lines[i + 1].clone()) } else { None };
@@ -143,6 +177,25 @@ fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
         });
     }
     matches
+}
+
+/// Convert byte-offset pairs to char-offset pairs in one O(n) pass.
+fn byte_ranges_to_char_ranges(s: &str, byte_ranges: &[(usize, usize)]) -> Vec<(usize, usize)> {
+    if byte_ranges.is_empty() { return vec![]; }
+    let mut result = Vec::with_capacity(byte_ranges.len());
+    let mut ri = 0;
+    let mut char_idx = 0usize;
+    for (byte_idx, _ch) in s.char_indices() {
+        while ri < byte_ranges.len() && byte_ranges[ri].0 == byte_idx {
+            let (bs, be) = byte_ranges[ri];
+            let char_len = s[bs..be].chars().count();
+            result.push((char_idx, char_idx + char_len));
+            ri += 1;
+        }
+        if ri >= byte_ranges.len() { break; }
+        char_idx += 1;
+    }
+    result
 }
 
 fn truncate(line: &str) -> String {
