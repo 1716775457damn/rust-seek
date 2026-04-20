@@ -123,19 +123,21 @@ cargo build --release
 ./target/release/rust-seek
 ```
 
-**Optional: package as a `.app` bundle**
-
-```bash
-cargo install cargo-bundle
-cargo bundle --release
-# Opens as a proper macOS app:
-open "target/release/bundle/osx/Rust Seek.app"
-```
+> Or download the pre-built binary from [Releases](../../releases):
+> ```bash
+> # Apple Silicon (M1/M2/M3)
+> tar -xzf rust-seek-macos-aarch64.tar.gz
+> chmod +x rust-seek-macos-aarch64
+> ./rust-seek-macos-aarch64
+>
+> # Intel Mac
+> tar -xzf rust-seek-macos-x86_64.tar.gz
+> chmod +x rust-seek-macos-x86_64
+> ./rust-seek-macos-x86_64
+> ```
 
 > ℹ️ On first launch macOS may show a security warning.  
 > Go to **System Settings → Privacy & Security** and click **Open Anyway**.
-
-> 🌏 CJK (Chinese/Japanese/Korean) fonts are embedded in the binary — no system font installation needed on any platform.
 
 ### Linux
 
