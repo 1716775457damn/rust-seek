@@ -117,28 +117,23 @@ fn decode(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
 
 fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
     let mut matches = Vec::new();
-    let mut prev: Option<Arc<String>> = None;
-    let mut lines_iter = content.lines().enumerate().peekable();
+    // Pre-build Arc<String> for each line so context_after can reuse the same Arc
+    // that will become the match line or prev on the next iteration — zero double-alloc.
+    let lines: Vec<Arc<String>> = content.lines()
+        .map(|l| Arc::new(l.to_string()))
+        .collect();
+    let n = lines.len();
 
-    while let Some((i, line)) = lines_iter.next() {
-        if line.len() > MAX_LINE_LEN * 4 {
-            prev = None;
-            continue;
-        }
-        if pattern.find(line).is_none() {
-            // Store raw line for context (no truncation needed — only display truncates)
-            prev = Some(Arc::new(line.to_string()));
-            continue;
-        }
-        let ranges: Vec<(usize, usize)> = pattern.find_iter(line)
+    for i in 0..n {
+        let line = &lines[i];
+        if line.len() > MAX_LINE_LEN * 4 { continue; }
+        if pattern.find(line.as_str()).is_none() { continue; }
+        let ranges: Vec<(usize, usize)> = pattern.find_iter(line.as_str())
             .map(|m| (m.start(), m.end()))
             .collect();
         let display = truncate(line);
-        let context_before = prev.clone();
-        let context_after = lines_iter.peek()
-            .map(|(_, next)| Arc::new(next.to_string()));
-        // Reuse the same Arc for prev — avoids a second allocation for the raw line
-        let line_arc = Arc::new(line.to_string());
+        let context_before = if i > 0 { Some(lines[i - 1].clone()) } else { None };
+        let context_after  = if i + 1 < n { Some(lines[i + 1].clone()) } else { None };
         matches.push(Match {
             line_num: i + 1,
             line: display,
@@ -146,7 +141,6 @@ fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
             context_before,
             context_after,
         });
-        prev = Some(line_arc);
     }
     matches
 }
@@ -161,26 +155,41 @@ fn truncate(line: &str) -> String {
 }
 
 pub fn file_icon(path: &str) -> &'static str {
-    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    match ext.as_str() {
-        "exe" | "msi"                          => "⚙",
-        "bat" | "cmd" | "ps1" | "sh"           => "⚙",
-        "rs" | "py" | "js" | "ts" | "go"
-        | "c" | "cpp" | "java" | "cs" | "rb"  => "📝",
-        "toml" | "json" | "yaml" | "yml"
-        | "xml" | "ini" | "cfg" | "env"        => "🔧",
-        "md" | "txt" | "log"                   => "📄",
-        "png" | "jpg" | "jpeg" | "gif"
-        | "svg" | "ico" | "bmp" | "webp"       => "🖼",
-        "mp4" | "mkv" | "avi" | "mov"          => "🎬",
-        "mp3" | "wav" | "flac" | "ogg"         => "🎵",
-        "zip" | "rar" | "7z" | "tar" | "gz"   => "📦",
-        "pdf"                                  => "📕",
-        "doc" | "docx"                         => "📘",
-        "xls" | "xlsx"                         => "📗",
-        "ppt" | "pptx"                         => "📙",
-        "lnk"                                  => "🔗",
-        "db" | "sqlite" | "sql"                => "🗄",
-        _                                      => "📄",
-    }
+    // Find extension without allocating: scan bytes from the right
+    let ext_start = path.rfind('.').map(|i| i + 1).unwrap_or(path.len());
+    let ext = &path[ext_start..];
+    // Case-insensitive compare without allocation using eq_ignore_ascii_case
+    if ext.eq_ignore_ascii_case("exe") || ext.eq_ignore_ascii_case("msi") { return "⚙"; }
+    if ext.eq_ignore_ascii_case("bat") || ext.eq_ignore_ascii_case("cmd")
+    || ext.eq_ignore_ascii_case("ps1") || ext.eq_ignore_ascii_case("sh")  { return "⚙"; }
+    if ext.eq_ignore_ascii_case("rs")  || ext.eq_ignore_ascii_case("py")
+    || ext.eq_ignore_ascii_case("js")  || ext.eq_ignore_ascii_case("ts")
+    || ext.eq_ignore_ascii_case("go")  || ext.eq_ignore_ascii_case("c")
+    || ext.eq_ignore_ascii_case("cpp") || ext.eq_ignore_ascii_case("java")
+    || ext.eq_ignore_ascii_case("cs")  || ext.eq_ignore_ascii_case("rb")  { return "📝"; }
+    if ext.eq_ignore_ascii_case("toml")|| ext.eq_ignore_ascii_case("json")
+    || ext.eq_ignore_ascii_case("yaml")|| ext.eq_ignore_ascii_case("yml")
+    || ext.eq_ignore_ascii_case("xml") || ext.eq_ignore_ascii_case("ini")
+    || ext.eq_ignore_ascii_case("cfg") || ext.eq_ignore_ascii_case("env") { return "🔧"; }
+    if ext.eq_ignore_ascii_case("md")  || ext.eq_ignore_ascii_case("txt")
+    || ext.eq_ignore_ascii_case("log")                                     { return "📄"; }
+    if ext.eq_ignore_ascii_case("png") || ext.eq_ignore_ascii_case("jpg")
+    || ext.eq_ignore_ascii_case("jpeg")|| ext.eq_ignore_ascii_case("gif")
+    || ext.eq_ignore_ascii_case("svg") || ext.eq_ignore_ascii_case("ico")
+    || ext.eq_ignore_ascii_case("bmp") || ext.eq_ignore_ascii_case("webp"){ return "🖼"; }
+    if ext.eq_ignore_ascii_case("mp4") || ext.eq_ignore_ascii_case("mkv")
+    || ext.eq_ignore_ascii_case("avi") || ext.eq_ignore_ascii_case("mov") { return "🎬"; }
+    if ext.eq_ignore_ascii_case("mp3") || ext.eq_ignore_ascii_case("wav")
+    || ext.eq_ignore_ascii_case("flac")|| ext.eq_ignore_ascii_case("ogg") { return "🎵"; }
+    if ext.eq_ignore_ascii_case("zip") || ext.eq_ignore_ascii_case("rar")
+    || ext.eq_ignore_ascii_case("7z")  || ext.eq_ignore_ascii_case("tar")
+    || ext.eq_ignore_ascii_case("gz")                                      { return "📦"; }
+    if ext.eq_ignore_ascii_case("pdf")                                     { return "📕"; }
+    if ext.eq_ignore_ascii_case("doc") || ext.eq_ignore_ascii_case("docx"){ return "📘"; }
+    if ext.eq_ignore_ascii_case("xls") || ext.eq_ignore_ascii_case("xlsx"){ return "📗"; }
+    if ext.eq_ignore_ascii_case("ppt") || ext.eq_ignore_ascii_case("pptx"){ return "📙"; }
+    if ext.eq_ignore_ascii_case("lnk")                                     { return "🔗"; }
+    if ext.eq_ignore_ascii_case("db")  || ext.eq_ignore_ascii_case("sqlite")
+    || ext.eq_ignore_ascii_case("sql")                                     { return "🗄"; }
+    "📄"
 }
