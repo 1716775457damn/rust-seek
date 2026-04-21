@@ -20,6 +20,81 @@ fn main() {
         ..Default::default()
     };
     if let Err(e) = eframe::run_native("Rust Seek", options, Box::new(|cc| {
+        // ── Native-quality dark theme ─────────────────────────────────────────
+        let mut visuals = egui::Visuals::dark();
+
+        // Window / panel backgrounds — three-layer depth
+        visuals.window_fill        = egui::Color32::from_rgb(20, 22, 28);   // deepest
+        visuals.panel_fill         = egui::Color32::from_rgb(26, 28, 36);   // mid
+        visuals.faint_bg_color     = egui::Color32::from_rgb(32, 35, 44);   // surface
+        visuals.extreme_bg_color   = egui::Color32::from_rgb(15, 16, 21);   // input bg
+
+        // Borders — subtle, not harsh
+        visuals.window_stroke      = egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 60, 75));
+        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(45, 50, 65));
+
+        // Widget states
+        let accent = egui::Color32::from_rgb(56, 189, 248);   // sky-400
+        let accent_dim = egui::Color32::from_rgb(14, 116, 144); // darker accent for bg
+
+        // Inactive
+        visuals.widgets.inactive.bg_fill        = egui::Color32::from_rgb(38, 42, 54);
+        visuals.widgets.inactive.bg_stroke       = egui::Stroke::new(1.0, egui::Color32::from_rgb(55, 60, 78));
+        visuals.widgets.inactive.corner_radius   = egui::CornerRadius::same(6);
+        visuals.widgets.inactive.fg_stroke       = egui::Stroke::new(1.5, egui::Color32::from_rgb(180, 190, 210));
+
+        // Hovered
+        visuals.widgets.hovered.bg_fill          = egui::Color32::from_rgb(48, 54, 70);
+        visuals.widgets.hovered.bg_stroke        = egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 90, 115));
+        visuals.widgets.hovered.corner_radius    = egui::CornerRadius::same(6);
+        visuals.widgets.hovered.fg_stroke        = egui::Stroke::new(1.5, egui::Color32::WHITE);
+        visuals.widgets.hovered.expansion        = 1.0;
+
+        // Active (pressed)
+        visuals.widgets.active.bg_fill           = accent_dim;
+        visuals.widgets.active.bg_stroke         = egui::Stroke::new(1.0, accent);
+        visuals.widgets.active.corner_radius     = egui::CornerRadius::same(6);
+        visuals.widgets.active.fg_stroke         = egui::Stroke::new(2.0, egui::Color32::WHITE);
+
+        // Open (selected/toggled)
+        visuals.widgets.open.bg_fill             = egui::Color32::from_rgb(30, 34, 46);
+        visuals.widgets.open.bg_stroke           = egui::Stroke::new(1.0, accent);
+        visuals.widgets.open.corner_radius       = egui::CornerRadius::same(6);
+
+        // Selection highlight
+        visuals.selection.bg_fill                = egui::Color32::from_rgba_unmultiplied(56, 189, 248, 55);
+        visuals.selection.stroke                 = egui::Stroke::new(1.0, accent);
+
+        // Hyperlinks
+        visuals.hyperlink_color                  = accent;
+
+        // Separator / grid lines
+        visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(50, 55, 70));
+
+        // Scrollbar
+        visuals.handle_shape = egui::style::HandleShape::Rect { aspect_ratio: 0.5 };
+
+        cc.egui_ctx.set_visuals(visuals);
+
+        // ── Typography ────────────────────────────────────────────────────────
+        let mut style = (*cc.egui_ctx.style()).clone();
+        style.text_styles = [
+            (egui::TextStyle::Small,     egui::FontId::proportional(11.5)),
+            (egui::TextStyle::Body,      egui::FontId::proportional(13.5)),
+            (egui::TextStyle::Button,    egui::FontId::proportional(13.0)),
+            (egui::TextStyle::Heading,   egui::FontId::proportional(16.0)),
+            (egui::TextStyle::Monospace, egui::FontId::monospace(13.0)),
+        ].into();
+        style.spacing.item_spacing      = egui::vec2(8.0, 5.0);
+        style.spacing.button_padding    = egui::vec2(10.0, 5.0);
+        style.spacing.window_margin     = egui::Margin::same(12);
+        style.spacing.indent            = 18.0;
+        style.spacing.interact_size     = egui::vec2(40.0, 28.0);
+        style.spacing.scroll.bar_width  = 6.0;
+        style.spacing.scroll.bar_inner_margin = 2.0;
+        cc.egui_ctx.set_style(style);
+
+        // ── Fonts ─────────────────────────────────────────────────────────────
         let mut fonts = egui::FontDefinitions::default();
         let cjk_bytes: &[u8] = include_bytes!("../assets/NotoSansSC-Regular.otf");
         fonts.font_data.insert(

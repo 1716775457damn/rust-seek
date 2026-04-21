@@ -312,26 +312,30 @@ impl eframe::App for App {
         }
 
         // Toolbar
-        egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
-            ui.add_space(6.0);
+        egui::TopBottomPanel::top("toolbar")
+            .frame(egui::Frame::side_top_panel(&ctx.style())
+                .inner_margin(egui::Margin { left: 14, right: 14, top: 10, bottom: 8 }))
+            .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label("路径:");
+                // Path field with folder button
+                ui.label(egui::RichText::new("路径").color(egui::Color32::from_rgb(140, 155, 175)).size(12.0));
                 let path_id = ui.make_persistent_id("path_popup");
                 let path_resp = ui.add(
                     TextEdit::singleline(&mut self.search_path)
-                        .desired_width(180.0)
+                        .desired_width(190.0)
+                        .font(egui::TextStyle::Body)
                         .text_color(if self.path_error.is_some() {
-                            Color32::from_rgb(255, 100, 100)
+                            Color32::from_rgb(248, 113, 113)
                         } else {
-                            ui.visuals().text_color()
-                        }),
+                            Color32::from_rgb(220, 228, 240)
+                        })
+                        .frame(true),
                 );
                 if path_resp.gained_focus() && !self.prefs.path_history.is_empty() {
                     ui.memory_mut(|m| m.open_popup(path_id));
                 }
                 egui::popup_below_widget(ui, path_id, &path_resp, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                    ui.set_min_width(240.0);
-                    // Only clone when popup is actually open
+                    ui.set_min_width(260.0);
                     let history: Vec<String> = self.prefs.path_history.iter().take(10).cloned().collect();
                     for h in history {
                         if ui.selectable_label(false, &h).clicked() {
@@ -340,17 +344,16 @@ impl eframe::App for App {
                         }
                     }
                 });
-
-                if ui.button("📁").clicked() {
+                if ui.add(egui::Button::new("📁").min_size(egui::vec2(28.0, 28.0))).clicked() {
                     if let Some(p) = rfd::FileDialog::new().pick_folder() {
                         self.search_path = p.to_string_lossy().replace('\\', "/");
                         self.path_error = None;
                     }
                 }
 
-                ui.separator();
+                ui.add(egui::Separator::default().vertical().spacing(6.0));
 
-                // Mode toggle — switching clears results
+                // Mode toggle
                 let prev_mode = self.mode;
                 ui.selectable_value(&mut self.mode, SearchMode::Filename, "🗂 文件名")
                     .on_hover_text("按文件/文件夹名搜索");
@@ -362,17 +365,19 @@ impl eframe::App for App {
                     self.status = "就绪".to_string();
                 }
 
-                ui.separator();
+                ui.add(egui::Separator::default().vertical().spacing(6.0));
 
-                ui.label("搜索:");
+                // Pattern field
                 let pat_id = ui.make_persistent_id("pat_popup");
                 let pat_resp = ui.add(
                     TextEdit::singleline(&mut self.pattern)
                         .hint_text(if self.mode == SearchMode::Filename { "文件名…" } else { "关键词…" })
-                        .desired_width(200.0),
+                        .desired_width(220.0)
+                        .font(egui::TextStyle::Body)
+                        .frame(true),
                 );
 
-                // Live regex validation — only re-check when pattern/flags change
+                // Live regex validation
                 if self.pattern != self.last_pat
                     || self.ignore_case != self.last_ic
                     || self.fixed_string != self.last_fs
@@ -396,40 +401,29 @@ impl eframe::App for App {
                     };
                 }
 
-                // Auto-focus on first frame
-                if self.needs_focus {
-                    pat_resp.request_focus();
-                    self.needs_focus = false;
-                }
+                if self.needs_focus { pat_resp.request_focus(); self.needs_focus = false; }
 
                 if pat_resp.gained_focus() && !self.prefs.pattern_history.is_empty() {
                     ui.memory_mut(|m| m.open_popup(pat_id));
                 }
-                // Arrow key history navigation
                 if pat_resp.has_focus() && !self.prefs.pattern_history.is_empty() {
-                    let up = ui.input(|i| i.key_pressed(egui::Key::ArrowUp));
+                    let up   = ui.input(|i| i.key_pressed(egui::Key::ArrowUp));
                     let down = ui.input(|i| i.key_pressed(egui::Key::ArrowDown));
                     if up || down {
                         let len = self.prefs.pattern_history.len();
                         let idx = match self.pat_history_idx {
-                            None => if up { Some(0) } else { None },
-                            Some(i) => {
-                                if up { Some((i + 1).min(len - 1)) }
-                                else if i == 0 { None }
-                                else { Some(i - 1) }
-                            }
+                            None    => if up { Some(0) } else { None },
+                            Some(i) => if up { Some((i+1).min(len-1)) } else if i==0 { None } else { Some(i-1) },
                         };
                         self.pat_history_idx = idx;
-                        if let Some(i) = idx {
-                            self.pattern = self.prefs.pattern_history[i].clone();
-                        }
+                        if let Some(i) = idx { self.pattern = self.prefs.pattern_history[i].clone(); }
                     }
                 }
                 if pat_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     self.start_search();
                 }
                 egui::popup_below_widget(ui, pat_id, &pat_resp, egui::PopupCloseBehavior::CloseOnClickOutside, |ui| {
-                    ui.set_min_width(240.0);
+                    ui.set_min_width(260.0);
                     let history: Vec<String> = self.prefs.pattern_history.iter().take(10).cloned().collect();
                     for h in history {
                         if ui.selectable_label(false, &h).clicked() {
@@ -440,34 +434,59 @@ impl eframe::App for App {
                     }
                 });
 
+                // Search / cancel button — accent-filled primary action
                 if self.searching {
-                    if ui.button("⏹ 取消").on_hover_text("也可按 Esc").clicked() {
+                    if ui.add(
+                        egui::Button::new("⏹  取消")
+                            .fill(Color32::from_rgb(127, 29, 29))
+                            .min_size(egui::vec2(72.0, 28.0))
+                    ).on_hover_text("也可按 Esc").clicked() {
                         self.cancel_search();
                         self.status = "已取消".to_string();
                     }
-                } else if ui.button("🔍 搜索").clicked() {
-                    self.start_search();
+                } else {
+                    if ui.add(
+                        egui::Button::new("🔍  搜索")
+                            .fill(Color32::from_rgb(7, 89, 133))
+                            .min_size(egui::vec2(72.0, 28.0))
+                    ).clicked() {
+                        self.start_search();
+                    }
                 }
 
-                ui.separator();
+                ui.add(egui::Separator::default().vertical().spacing(6.0));
                 ui.checkbox(&mut self.ignore_case, "Aa").on_hover_text("忽略大小写");
                 ui.checkbox(&mut self.fixed_string, "F").on_hover_text("纯文本（不使用正则）");
             });
 
             if let Some(ref err) = self.path_error {
-                ui.label(RichText::new(err).color(Color32::from_rgb(255, 100, 100)).small());
+                ui.add_space(2.0);
+                ui.label(RichText::new(format!("⚠  {err}")).color(Color32::from_rgb(248, 113, 113)).size(11.5));
             }
             if let Some(ref err) = self.regex_error {
-                ui.label(RichText::new(format!("正则错误: {err}")).color(Color32::from_rgb(255, 140, 0)).small());
+                ui.add_space(2.0);
+                ui.label(RichText::new(format!("正则错误: {err}")).color(Color32::from_rgb(251, 146, 60)).size(11.5));
             }
-            ui.add_space(4.0);
         });
 
         // Status bar
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+        egui::TopBottomPanel::bottom("status")
+            .frame(egui::Frame::side_top_panel(&ctx.style())
+                .inner_margin(egui::Margin { left: 14, right: 14, top: 5, bottom: 5 }))
+            .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if self.searching { ui.spinner(); }
-                ui.label(RichText::new(&self.status).color(Color32::GRAY).small());
+                if self.searching {
+                    ui.spinner();
+                    ui.add_space(4.0);
+                }
+                let status_color = if self.status.contains("未找到") {
+                    Color32::from_rgb(156, 163, 175)
+                } else if self.status.contains("错误") {
+                    Color32::from_rgb(248, 113, 113)
+                } else {
+                    Color32::from_rgb(148, 163, 184)
+                };
+                ui.label(RichText::new(&self.status).color(status_color).size(11.5));
             });
         });
 
@@ -475,41 +494,49 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.results.is_empty() && !self.searching {
                 ui.centered_and_justified(|ui| {
-                    ui.label(RichText::new("输入关键词后按回车或点击搜索").color(Color32::GRAY));
+                    ui.label(RichText::new("🔍  输入关键词后按回车搜索")
+                        .color(Color32::from_rgb(75, 85, 100)).size(14.0));
                 });
                 return;
             }
 
-            // Toolbar above results
+            // Results toolbar
             if !self.results.is_empty() {
-                ui.horizontal(|ui| {
-                    if self.mode == SearchMode::Text {
-                        if ui.small_button("▼ 全部展开").clicked() { self.collapsed.clear(); }
-                        if ui.small_button("▶ 全部折叠").clicked() {
-                            for r in &self.results { self.collapsed.insert(r.path.clone()); }
+                egui::Frame::new()
+                    .inner_margin(egui::Margin { left: 4, right: 4, top: 4, bottom: 6 })
+                    .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        if self.mode == SearchMode::Text {
+                            if ui.small_button("▼ 全部展开").clicked() { self.collapsed.clear(); }
+                            if ui.small_button("▶ 全部折叠").clicked() {
+                                for r in &self.results { self.collapsed.insert(r.path.clone()); }
+                            }
+                            ui.add(egui::Separator::default().vertical().spacing(4.0));
                         }
-                    }
-                    if ui.small_button("📋 复制全部路径").clicked() {
-                        let all = self.results.iter().map(|r| r.path.as_str()).collect::<Vec<_>>().join("\n");
-                        ctx.copy_text(all);
-                    }
-                    if self.result_capped {
-                        ui.label(RichText::new(format!("⚠ 结果已截断至 {} 条", MAX_RESULTS)).color(Color32::YELLOW).small());
-                    }
-                    // Post-search filter
-                    ui.add_space(8.0);
-                    ui.label(RichText::new("过滤:").small());
-                    ui.add(TextEdit::singleline(&mut self.filter)
-                        .hint_text("在结果中过滤…")
-                        .desired_width(140.0));
-                    if !self.filter.is_empty() && ui.small_button("✕").clicked() {
-                        self.filter.clear();
-                        self.filter_lc.clear();
-                    }
-                    // Update cached lowercase only when filter changes
-                    let new_lc = self.filter.to_lowercase();
-                    if new_lc != self.filter_lc { self.filter_lc = new_lc; }
+                        if ui.small_button("📋 复制全部路径").clicked() {
+                            let all = self.results.iter().map(|r| r.path.as_str()).collect::<Vec<_>>().join("\n");
+                            ctx.copy_text(all);
+                        }
+                        if self.result_capped {
+                            ui.add_space(6.0);
+                            ui.label(RichText::new(format!("⚠  结果已截断至 {} 条", MAX_RESULTS))
+                                .color(Color32::from_rgb(251, 191, 36)).size(11.5));
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if !self.filter.is_empty() && ui.small_button("✕").clicked() {
+                                self.filter.clear(); self.filter_lc.clear();
+                            }
+                            ui.add(TextEdit::singleline(&mut self.filter)
+                                .hint_text("过滤结果…")
+                                .desired_width(150.0)
+                                .font(egui::TextStyle::Small));
+                            ui.label(RichText::new("过滤:").color(Color32::from_rgb(120, 135, 155)).size(12.0));
+                            let new_lc = self.filter.to_lowercase();
+                            if new_lc != self.filter_lc { self.filter_lc = new_lc; }
+                        });
+                    });
                 });
+                ui.add(egui::Separator::default().spacing(0.0));
             }
 
             let mut toggle_collapse: Option<String> = None;
