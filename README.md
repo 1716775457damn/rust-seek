@@ -1,211 +1,179 @@
-# 🔍 Rust Seek
+<div align="center">
 
-> **A blazing-fast file & text search tool built with Rust — searches millions of files in milliseconds, with a clean native GUI.**
+# 🔍 rust-seek
 
-![Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Version](https://img.shields.io/badge/version-0.1.0-brightgreen)
+**高性能本地文件搜索工具 — 文件名 + 文本内容，原生 GUI**
 
----
+[![Release](https://img.shields.io/github/v/release/1716775457damn/rust-seek?style=flat-square&color=e05d2a)](https://github.com/1716775457damn/rust-seek/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/1716775457damn/rust-seek/release.yml?style=flat-square&label=CI)](https://github.com/1716775457damn/rust-seek/actions)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange?style=flat-square)](https://www.rust-lang.org)
 
-## ✨ Why Rust Seek?
+单一二进制，无需安装，跨平台运行。搜索百万文件只需数秒，支持正则、GBK 编码、上下文行、深色/浅色主题。
 
-Most search tools are either too slow, too complex, or require a runtime. **Rust Seek** is a single binary — no installation, no dependencies, no configuration. Just open it and search.
+[下载](#-下载) · [功能](#-功能) · [使用方式](#-使用方式) · [架构](#-架构) · [本地构建](#-本地构建)
 
-- ⚡ **Parallel search engine** — uses every CPU core via the same engine powering `ripgrep`
-- 🗺️ **Memory-mapped I/O** — reads large files without loading them fully into RAM
-- 🎯 **Full regex support** — powered by Rust's battle-tested `regex` crate
-- 🖥️ **Native GUI** — built with `egui`, renders at 60fps with zero web bloat
-- 🌏 **Chinese file support** — reads both UTF-8 and GBK/GB2312 encoded files
-- 📦 **Zero dependencies for the user** — one binary, runs anywhere on Windows / macOS / Linux
+</div>
 
 ---
 
-## 🚀 Features
+## 📦 下载
 
-### Two Search Modes
+前往 [Releases](https://github.com/1716775457damn/rust-seek/releases) 下载最新版本：
 
-| Mode | What it does |
-|------|-------------|
-| 🗂 **File Name** | Search files and folders by name across any directory, including system folders and `Program Files`. Finds `.exe`, `.lnk`, documents — anything. |
-| 📄 **Text** | Search inside file contents with full regex support and context lines. Reads UTF-8 and GBK encoded files. |
+| 平台 | 文件 | 说明 |
+|------|------|------|
+| Windows | `rust-seek-windows-x86_64.exe` | 双击即用，无需安装 |
+| macOS (Apple Silicon) | `rust-seek-macos-aarch64.tar.gz` | M 系列芯片 |
+| macOS (Intel) | `rust-seek-macos-x86_64.tar.gz` | x86_64 |
+| Linux | `rust-seek-linux-x86_64.tar.gz` | x86_64 |
 
-Switching modes instantly clears results — no mixing of file and text results.
-
-### Search
-- **Regex by default** — use any valid regular expression as your pattern
-- **Fixed string mode** (`F`) — disable regex for exact literal matching
-- **Case-insensitive** (`Aa`) — on by default, toggle anytime
-- **Live regex validation** — syntax errors shown instantly as you type, before you search
-- **Binary file detection** — automatically skips binary files
-- **Chinese encoding support** — searches GBK / GB2312 files, not just UTF-8
-- **Context lines** — text mode shows the line before and after each match
-- **Up to 2,000 results** — capped to keep the UI fast; warns when truncated
-
-### Results
-- **Real-time streaming** — results appear as they're found
-- **Live progress** — status bar shows match count and file count while searching
-- **All matches highlighted** — every occurrence on a line highlighted in yellow
-- **Line numbers** — green line numbers for match lines, grey for context
-- **Sorted output** — always sorted by file path
-- **File size** — shown next to each result in file name mode
-- **File type icons** — ⚙ exe, 📝 code, 🖼 image, 🎬 video, 📦 archive, etc.
-- **Collapse / expand** — fold individual files or all at once with one click
-- **Show more** — files with many matches show the first 5, expandable on demand
-- **Post-search filter** — type in the filter box to narrow results without re-searching
-- **Copy all paths** — one click to copy every result path to clipboard
-
-### Interface
-- **Auto-focus** — search box is ready to type the moment you open the app
-- **Drag & drop** — drag a folder onto the window to set the search path instantly
-- **Folder picker** — click 📁 or drag a folder to set the path
-- **Search history** — path and pattern history saved across restarts, click to reuse
-- **↑↓ history navigation** — press arrow keys in the search box to browse history
-- **Press Enter to search** — no need to reach for the mouse
-- **Cancel anytime** — click ⏹ or press `Esc` to stop a running search immediately
-- **Right-click menu** — on any result: open, reveal in Explorer/Finder, copy path, copy folder path
-- **Reveal in Explorer / Finder** — opens Windows Explorer or macOS Finder with the file selected
-- **Window title** — updates to show current search status
-- **Status bar** — total matches, files searched, and elapsed time
+> **macOS 首次打开提示"未验证的开发者"**：系统设置 → 隐私与安全性 → 仍然打开
 
 ---
 
-## 📸 Screenshot
+## ✨ 功能
+
+### 两种搜索模式
+
+| 模式 | 说明 |
+|------|------|
+| 🗂 文件名 | 按文件/文件夹名搜索，支持正则，显示文件大小和类型图标 |
+| 📄 文本 | 搜索文件内容，显示匹配行 + 上下文，支持 UTF-8 / GBK 双编码 |
+
+### 搜索引擎
+
+- **并行遍历**：基于 `ignore` crate（ripgrep 同款），多核并行，速度与 ripgrep 相当
+- **内存映射 I/O**：大文件通过 `memmap2` 零拷贝读取，不占用额外内存
+- **正则支持**：Rust `regex` crate，DFA 引擎，Unicode 感知
+- **纯文本模式**（`F`）：自动 escape 特殊字符，无需手写转义
+- **大小写不敏感**（`Aa`）：默认开启，随时切换
+- **实时正则校验**：输入时即时检测语法错误，搜索前就能发现问题
+- **二进制文件跳过**：自动检测并跳过二进制文件
+- **GBK / GB2312 支持**：UTF-8 解码失败时自动回退 GBK，中文文件无乱码
+- **结果上限 2000 条**：超出时自动停止后台线程，提示截断
+
+### 结果展示
+
+- **实时流式输出**：结果边搜索边显示，无需等待完成
+- **全部高亮**：每行所有匹配位置均以黄色背景标出
+- **上下文行**：文本模式显示匹配行的前后各一行，行号绿色标注
+- **折叠/展开**：单个文件或全部一键折叠，超过 5 处匹配时按需展开
+- **文件类型图标**：⚙ 可执行、📝 代码、🖼 图片、🎬 视频、📦 压缩包等
+- **结果过滤**：搜索完成后在结果中二次过滤，无需重新搜索
+- **一键复制全部路径**：所有结果路径复制到剪贴板
+- **右键菜单**：打开文件、在资源管理器/Finder 中显示、复制路径/文件夹路径
+
+### 界面
+
+- **深色/浅色主题**：点击 ☀️/🌙 切换，或按 `T` 键
+- **拖拽设置路径**：将文件夹拖到窗口即可设置搜索目录
+- **搜索历史**：路径和关键词历史跨重启保存，点击或 ↑↓ 键快速复用
+- **回车搜索**：无需鼠标，输入后直接回车
+- **Esc 取消**：随时中断正在运行的搜索
+- **窗口标题**：实时显示搜索状态和结果数
+- **自动聚焦**：启动即可直接输入，无需点击
+
+---
+
+## 🚀 使用方式
+
+1. 打开 rust-seek
+2. 在「路径」框输入或拖入要搜索的目录（默认为当前目录）
+3. 选择模式：🗂 文件名 或 📄 文本
+4. 输入关键词，按 **Enter** 或点击 **🔍 搜索**
+5. 结果实时出现，右键任意结果可打开文件或在资源管理器中定位
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ 路径: [C:/my-project  ] 📁  🗂文件名  📄文本  搜索: [fn main] 🔍搜索  Aa  F │
+│ 路径: [C:/project  ] 📁  🗂文件名  📄文本  [fn main    ] 🔍搜索  Aa F ☀️│
 ├──────────────────────────────────────────────────────────────────────┤
-│ ▼ 全部展开  ▶ 全部折叠  📋 复制全部路径  过滤: [        ] ✕           │
+│ ▼全部展开  ▶全部折叠  📋复制全部路径          过滤: [      ] ✕      │
 ├──────────────────────────────────────────────────────────────────────┤
-│ ▼ 📝 src/app.rs  (3 处匹配)                                           │
-│    41   fn start_search(&mut self) {                                  │
-│    42:  fn start_search(&mut self) → starts parallel walk            │
-│    43   let re = RegexBuilder::new(&pat)...                          │
+│ ▼ 📝 src/main.rs  (1 处匹配)                                         │
+│    0   mod app;                                                      │
+│    1:  fn main() -> eframe::Result {                                 │
+│    2   let options = eframe::NativeOptions {                         │
 │                                                                      │
-│ ▼ 📝 src/main.rs  (1 处匹配)                                          │
-│     0   mod app;                                                     │
-│     1:  fn main() -> eframe::Result {                                │
-│     2   let options = eframe::NativeOptions {                        │
+│ ▼ 📝 src/app.rs  (3 处匹配)                                          │
+│   40   // start search                                               │
+│   41:  fn start_search(&mut self) {                                  │
+│   42   if self.pattern.is_empty() { return; }                        │
 ├──────────────────────────────────────────────────────────────────────┤
-│ ⏱ 4 处匹配，共 2 个文件 (8ms)                                         │
+│ 4 处匹配，共 2 个文件 (8ms)                                           │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 📥 Download & Run
-
-### Windows
-1. Go to [Releases](../../releases)
-2. Download `rust-seek.exe`
-3. Double-click — that's it
-
-> ✅ No .NET, no Java, no Python, no Visual C++ Redistributable required.  
-> Works on Windows 10 and above.
-
-### macOS
-
-macOS does not allow running unsigned binaries by default. Build from source:
-
-```bash
-# 1. Install Rust (if not already installed)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source ~/.cargo/env
-
-# 2. Clone and build
-git clone https://github.com/1716775457damn/rust-seek.git
-cd rust-seek
-cargo build --release
-
-# 3. Run directly
-./target/release/rust-seek
-```
-
-> Or download the pre-built binary from [Releases](../../releases):
-> ```bash
-> # Apple Silicon (M1/M2/M3)
-> tar -xzf rust-seek-macos-aarch64.tar.gz
-> chmod +x rust-seek-macos-aarch64
-> ./rust-seek-macos-aarch64
->
-> # Intel Mac
-> tar -xzf rust-seek-macos-x86_64.tar.gz
-> chmod +x rust-seek-macos-x86_64
-> ./rust-seek-macos-x86_64
-> ```
-
-> ℹ️ On first launch macOS may show a security warning.  
-> Go to **System Settings → Privacy & Security** and click **Open Anyway**.
-
-### Linux
-
-```bash
-git clone https://github.com/1716775457damn/rust-seek.git
-cd rust-seek
-cargo build --release
-./target/release/rust-seek
-```
-
----
-
-## 🛠️ Build from Source
-
-Requires [Rust](https://rustup.rs/) (stable toolchain).
-
-```bash
-git clone https://github.com/1716775457damn/rust-seek.git
-cd rust-seek
-cargo build --release
-# Windows: target/release/rust-seek.exe
-# macOS/Linux: target/release/rust-seek
-```
-
-The release build uses full LTO and `opt-level = 3`, producing a small, fast single binary.
-
----
-
-## 🏗️ Architecture
+## 🏗 架构
 
 ```
 src/
-├── main.rs       # Entry point, window setup, embedded CJK font
-├── app.rs        # GUI (egui): toolbar, results, history, drag-drop, context menus
-└── searcher.rs   # Core engine: mmap I/O, regex, binary detection, GBK decoding
+├── main.rs      # 入口，窗口配置，内嵌 CJK 字体（NotoSansSC）
+├── app.rs       # GUI：工具栏、结果列表、历史、拖拽、右键菜单
+├── searcher.rs  # 核心引擎：mmap 读取、正则匹配、GBK 解码、二进制检测
+└── theme.rs     # 深色/浅色主题 visuals
 ```
 
-| Component | Crate | Why |
-|-----------|-------|-----|
-| GUI framework | `egui` / `eframe` | Immediate-mode, native, no Electron |
-| Directory traversal | `ignore` | Same crate as ripgrep — parallel + gitignore-aware |
-| File reading | `memmap2` | OS-level memory mapping, zero-copy on large files |
-| Pattern matching | `regex` | DFA-based, Unicode-aware, very fast |
-| Encoding detection | `encoding_rs` | UTF-8 + GBK/GB2312 fallback |
-| Folder dialog | `rfd` | Native file picker |
-| Persistence | `serde_json` | Search history and preferences |
+| 组件 | Crate | 说明 |
+|------|-------|------|
+| GUI | `egui` / `eframe` | 即时模式，原生渲染，无 Electron |
+| 目录遍历 | `ignore` | ripgrep 同款，并行 + gitignore 感知 |
+| 文件读取 | `memmap2` | 内存映射，大文件零拷贝 |
+| 正则匹配 | `regex` | DFA 引擎，Unicode 感知 |
+| 编码检测 | `encoding_rs` | UTF-8 + GBK/GB2312 回退 |
+| 文件对话框 | `rfd` | 原生文件选择器 |
+| 持久化 | `serde_json` | 搜索历史和偏好设置 |
 
 ---
 
-## ⚡ Performance
+## ⚡ 性能
 
-Rust Seek uses the same parallel directory walking strategy as `ripgrep`. On a modern machine:
-
-- Searches a **100,000-file codebase** in under **2 seconds**
-- Handles files up to **10 MB** with memory-mapped I/O — no full load into RAM
-- Scales linearly with CPU cores
-- Context strings shared via `Arc` — zero extra heap allocation per match
-- Regex validation cached — no recompilation on every keystroke
-- Results sorted once at completion — O(n log n) instead of per-insert overhead
+- **大小写不敏感搜索 10 万文件**：< 2 秒（8 核机器）
+- **内存映射**：10 MB 以内文件零拷贝，不全量加载进内存
+- **多核线性扩展**：线程数 = CPU 核心数
+- **`Arc` 共享上下文行**：每个匹配零额外堆分配
+- **正则缓存**：每次按键不重新编译，仅在 pattern/选项变化时重建
+- **结果一次性排序**：搜索完成后 O(n log n)，不在插入时排序
+- **过滤索引缓存**：过滤结果缓存，仅在结果或过滤词变化时重建
 
 ---
 
-## 🗺️ Roadmap
+## 🔧 本地构建
 
-- [ ] Replace mode (find & replace across files)
-- [ ] File type filter (search only `.rs`, `.py`, etc.)
-- [ ] Dark / light theme toggle
-- [ ] Export results to file
+需要 [Rust](https://rustup.rs/) stable 工具链。
+
+```bash
+git clone https://github.com/1716775457damn/rust-seek.git
+cd rust-seek
+cargo build --release
+
+# 产物
+./target/release/rust-seek        # macOS / Linux
+./target/release/rust-seek.exe    # Windows
+```
+
+Linux 额外依赖：
+
+```bash
+sudo apt-get install -y \
+  libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+  libxkbcommon-dev libssl-dev libgtk-3-dev
+```
+
+---
+
+## 🤖 CI/CD
+
+推送 `v*` tag 触发四平台并行构建：
+
+```bash
+git tag v4.5.0
+git push origin v4.5.0
+```
+
+GitHub Actions 在 Windows / macOS ARM / macOS Intel / Ubuntu 上并行构建，约 5 分钟后在 [Releases](https://github.com/1716775457damn/rust-seek/releases) 生成全部二进制。
 
 ---
 
