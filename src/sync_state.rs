@@ -95,7 +95,8 @@ fn config_path() -> Option<PathBuf> {
 
 pub struct ExcludeSet {
     exact: std::collections::HashSet<String>,
-    exts: Vec<String>,
+    // HashSet for O(1) extension lookup instead of O(n) Vec scan
+    exts:  std::collections::HashSet<String>,
 }
 
 impl ExcludeSet {
@@ -113,11 +114,8 @@ impl ExcludeSet {
     pub fn matches(&self, rel: &str) -> bool {
         for segment in rel.split('/') {
             if self.exact.contains(segment) { return true; }
-            for ext in &self.exts {
-                if segment.len() > ext.len() + 1
-                    && segment.as_bytes()[segment.len() - ext.len() - 1] == b'.'
-                    && segment.ends_with(ext.as_str())
-                {
+            if let Some(dot) = segment.rfind('.') {
+                if dot > 0 && self.exts.contains(&segment[dot + 1..]) {
                     return true;
                 }
             }

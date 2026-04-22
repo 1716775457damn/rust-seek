@@ -27,7 +27,6 @@ pub struct SearchResult {
 
 pub fn search_filename(path: &Path, pattern: &Regex) -> Option<SearchResult> {
     let name = path.file_name()?.to_string_lossy();
-    // NFC-normalise the filename before matching so Chinese chars aren't split
     let name_nfc = nfc(name.as_ref());
     let ranges: Vec<(usize, usize)> = pattern
         .find_iter(&name_nfc)
@@ -36,7 +35,33 @@ pub fn search_filename(path: &Path, pattern: &Regex) -> Option<SearchResult> {
     if ranges.is_empty() { return None; }
     let (display_path, win_path) = make_paths(path);
     let icon = file_icon(&display_path);
+    // Reuse already-fetched metadata instead of a second stat() call
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    Some(SearchResult {
+        icon, win_path,
+        path_lc: display_path.to_lowercase(),
+        path: display_path,
+        file_size_str: fmt_size(file_size),
+        file_size,
+        matches: vec![Match {
+            line_num: 0, line: name_nfc, ranges,
+            context_before: None, context_after: None,
+        }],
+    })
+}
+
+/// Variant that accepts pre-fetched file size to avoid a redundant stat() call
+/// when the caller already has metadata (e.g. from WalkDir).
+pub fn search_filename_with_size(path: &Path, pattern: &Regex, file_size: u64) -> Option<SearchResult> {
+    let name = path.file_name()?.to_string_lossy();
+    let name_nfc = nfc(name.as_ref());
+    let ranges: Vec<(usize, usize)> = pattern
+        .find_iter(&name_nfc)
+        .map(|m| (m.start(), m.end()))
+        .collect();
+    if ranges.is_empty() { return None; }
+    let (display_path, win_path) = make_paths(path);
+    let icon = file_icon(&display_path);
     Some(SearchResult {
         icon, win_path,
         path_lc: display_path.to_lowercase(),
@@ -128,17 +153,8 @@ fn is_binary(data: &[u8], check_len: usize) -> bool {
     sample.contains(&0)
 }
 
-/// Decode bytes to a UTF-8 string, handling the encodings common on macOS:
-///
-/// 1. UTF-16 LE with BOM (FF FE) — system-generated files, RTF, some editors
-/// 2. UTF-16 BE with BOM (FE FF)
-/// 3. UTF-8 with BOM (EF BB BF)  — editors like TextEdit sometimes add this
-/// 4. UTF-8 without BOM           — most source files (zero-copy fast path)
-/// 5. Big5                        — Traditional Chinese (Taiwan / HK / macOS default)
-/// 6. GBK                         — Simplified Chinese (Windows / mainland)
-///
-/// For Big5 vs GBK we run both decoders and pick whichever produced fewer
-/// U+FFFD replacement characters, breaking ties in favour of Big5 on macOS.
+/// Detect encoding using only the first 4 KB, then decode the full content once.
+/// Previously decoded the entire file twice (Big5 + GBK) for non-UTF-8 files.
 fn decode(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
     // UTF-16 LE BOM: FF FE
     if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
@@ -150,95 +166,98 @@ fn decode(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
         let (cow, _, _) = UTF_16BE.decode(bytes);
         return std::borrow::Cow::Owned(cow.into_owned());
     }
-    // UTF-8 BOM: EF BB BF — strip BOM, return the rest
+    // UTF-8 BOM: EF BB BF
     if bytes.len() >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF {
         return match std::str::from_utf8(&bytes[3..]) {
             Ok(s)  => std::borrow::Cow::Borrowed(s),
             Err(_) => std::borrow::Cow::Owned(String::from_utf8_lossy(&bytes[3..]).into_owned()),
         };
     }
-    // Pure UTF-8 — zero copy, most common case
+    // Pure UTF-8 — zero copy
     if let Ok(s) = std::str::from_utf8(bytes) {
         return std::borrow::Cow::Borrowed(s);
     }
-    // Non-UTF-8: try Big5 and GBK, pick the one with fewer replacement chars.
-    // encoding_rs's had_errors flag is true when any byte was undecodable.
-    let (big5_cow, _, big5_err) = BIG5.decode(bytes);
-    let (gbk_cow,  _, gbk_err)  = GBK.decode(bytes);
+    // Non-UTF-8: probe only the first 4 KB to decide encoding,
+    // then decode the full file once with the winner.
+    const PROBE_LEN: usize = 4096;
+    let probe = &bytes[..bytes.len().min(PROBE_LEN)];
+    let (_, _, big5_err) = BIG5.decode(probe);
+    let (_, _, gbk_err)  = GBK.decode(probe);
 
-    // One decoder succeeded cleanly
-    if !big5_err && gbk_err  { return std::borrow::Cow::Owned(big5_cow.into_owned()); }
-    if !gbk_err  && big5_err { return std::borrow::Cow::Owned(gbk_cow.into_owned()); }
+    let use_big5 = match (big5_err, gbk_err) {
+        (false, true)  => true,
+        (true,  false) => false,
+        _ => {
+            // Both clean or both errored on probe — count replacements in probe
+            let (b5, _, _) = BIG5.decode(probe);
+            let (gk, _, _) = GBK.decode(probe);
+            let b5_bad = b5.chars().filter(|&c| c == '\u{FFFD}').count();
+            let gk_bad = gk.chars().filter(|&c| c == '\u{FFFD}').count();
+            #[cfg(target_os = "macos")]     { b5_bad <= gk_bad }
+            #[cfg(not(target_os = "macos"))]{ b5_bad <  gk_bad }
+        }
+    };
 
-    // Both had errors — count U+FFFD replacements and pick the better one.
-    // Tie-break: prefer Big5 on macOS (Traditional Chinese more common),
-    // prefer GBK elsewhere (Simplified Chinese / Windows files more common).
-    let big5_bad = big5_cow.chars().filter(|&c| c == '\u{FFFD}').count();
-    let gbk_bad  = gbk_cow.chars().filter(|&c| c == '\u{FFFD}').count();
-
-    #[cfg(target_os = "macos")]
-    let prefer_big5 = big5_bad <= gbk_bad;
-    #[cfg(not(target_os = "macos"))]
-    let prefer_big5 = big5_bad < gbk_bad;
-
-    if prefer_big5 {
-        std::borrow::Cow::Owned(big5_cow.into_owned())
-    } else {
-        std::borrow::Cow::Owned(gbk_cow.into_owned())
-    }
+    // Decode full file once with the chosen encoding
+    let (cow, _, _) = if use_big5 { BIG5.decode(bytes) } else { GBK.decode(bytes) };
+    std::borrow::Cow::Owned(cow.into_owned())
 }
 
 fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
-    // Collect line byte-offsets lazily — no Arc/String allocation until a match is found.
-    let line_offsets: Vec<(usize, usize)> = {
-        let mut offsets = Vec::new();
-        let mut start = 0;
-        for line in content.split('\n') {
-            let end = start + line.len();
-            offsets.push((start, end));
-            start = end + 1; // +1 for '\n'
-        }
-        offsets
-    };
-    let n = line_offsets.len();
     let mut matches = Vec::new();
+    // Use lines() iterator — no pre-allocation of all line offsets.
+    // Keep a sliding window of (prev_line, cur_line) to provide context
+    // without storing the entire file's lines in memory.
+    let mut prev_line: Option<String> = None;
+    let mut pending: Option<(usize, String, Vec<(usize, usize)>)> = None;
 
-    for i in 0..n {
-        let (ls, le) = line_offsets[i];
-        let le = le.min(content.len());
-        let line = &content[ls..le];
-        let line = line.strip_suffix('\r').unwrap_or(line);
-        if line.len() > MAX_LINE_LEN * 4 { continue; }
+    for (i, raw) in content.split('\n').enumerate() {
+        let line = raw.strip_suffix('\r').unwrap_or(raw);
+
+        // Flush pending match now that we have its context_after
+        if let Some((line_num, line_str, ranges)) = pending.take() {
+            let context_after = if !line.is_empty() {
+                Some(Arc::new(line.to_string()))
+            } else { None };
+            matches.push(Match {
+                line_num,
+                line: line_str,
+                ranges,
+                context_before: prev_line.as_ref().map(|s| Arc::new(s.clone())),
+                context_after,
+            });
+        }
+
+        if line.len() > MAX_LINE_LEN * 4 {
+            prev_line = Some(line.to_string());
+            continue;
+        }
 
         let byte_ranges: Vec<(usize, usize)> = pattern.find_iter(line)
             .map(|m| (m.start(), m.end()))
             .collect();
-        if byte_ranges.is_empty() { continue; }
 
-        let ranges = byte_ranges_to_char_ranges(line, &byte_ranges);
-        let display = truncate(line);
+        if !byte_ranges.is_empty() {
+            let ranges = byte_ranges_to_char_ranges(line, &byte_ranges);
+            let display = truncate(line);
+            // Defer push until next iteration so we can fill context_after
+            pending = Some((i + 1, display, ranges));
+        }
 
-        let context_before = if i > 0 {
-            let (ps, pe) = line_offsets[i - 1];
-            let pe = pe.min(content.len());
-            let prev = content[ps..pe].strip_suffix('\r').unwrap_or(&content[ps..pe]);
-            Some(Arc::new(prev.to_string()))
-        } else { None };
-        let context_after = if i + 1 < n {
-            let (ns, ne) = line_offsets[i + 1];
-            let ne = ne.min(content.len());
-            let next = content[ns..ne].strip_suffix('\r').unwrap_or(&content[ns..ne]);
-            Some(Arc::new(next.to_string()))
-        } else { None };
+        prev_line = Some(line.to_string());
+    }
 
+    // Flush last pending match (no context_after)
+    if let Some((line_num, line_str, ranges)) = pending {
         matches.push(Match {
-            line_num: i + 1,
-            line: display,
+            line_num,
+            line: line_str,
             ranges,
-            context_before,
-            context_after,
+            context_before: prev_line.map(|s| Arc::new(s)),
+            context_after: None,
         });
     }
+
     matches
 }
 

@@ -1,3 +1,4 @@
+mod annotate_app;
 mod app;
 mod searcher;
 mod sync_app;
