@@ -148,26 +148,50 @@ fn decode(bytes: &[u8]) -> std::borrow::Cow<'_, str> {
 }
 
 fn collect_matches(content: &str, pattern: &Regex) -> Vec<Match> {
+    // Collect line byte-offsets lazily — no Arc/String allocation until a match is found.
+    let line_offsets: Vec<(usize, usize)> = {
+        let mut offsets = Vec::new();
+        let mut start = 0;
+        for line in content.split('\n') {
+            let end = start + line.len();
+            offsets.push((start, end));
+            start = end + 1; // +1 for '\n'
+        }
+        offsets
+    };
+    let n = line_offsets.len();
     let mut matches = Vec::new();
-    let lines: Vec<Arc<String>> = content.lines()
-        .map(|l| Arc::new(l.to_string()))
-        .collect();
-    let n = lines.len();
 
     for i in 0..n {
-        let line = &lines[i];
+        let (ls, le) = line_offsets[i];
+        let le = le.min(content.len());
+        let line = &content[ls..le];
+        // Strip trailing \r for Windows line endings
+        let line = line.strip_suffix('\r').unwrap_or(line);
         if line.len() > MAX_LINE_LEN * 4 { continue; }
-        // Collect byte-offset ranges from the regex engine.
-        let byte_ranges: Vec<(usize, usize)> = pattern.find_iter(line.as_str())
+
+        let byte_ranges: Vec<(usize, usize)> = pattern.find_iter(line)
             .map(|m| (m.start(), m.end()))
             .collect();
         if byte_ranges.is_empty() { continue; }
-        // Convert byte offsets → char offsets in a single O(n) pass so that
-        // render_highlighted can safely index into the char array.
-        let ranges = byte_ranges_to_char_ranges(line.as_str(), &byte_ranges);
+
+        let ranges = byte_ranges_to_char_ranges(line, &byte_ranges);
         let display = truncate(line);
-        let context_before = if i > 0 { Some(lines[i - 1].clone()) } else { None };
-        let context_after  = if i + 1 < n { Some(lines[i + 1].clone()) } else { None };
+
+        // Only allocate Arc<String> for context lines of actual matches.
+        let context_before = if i > 0 {
+            let (ps, pe) = line_offsets[i - 1];
+            let pe = pe.min(content.len());
+            let prev = content[ps..pe].strip_suffix('\r').unwrap_or(&content[ps..pe]);
+            Some(Arc::new(prev.to_string()))
+        } else { None };
+        let context_after = if i + 1 < n {
+            let (ns, ne) = line_offsets[i + 1];
+            let ne = ne.min(content.len());
+            let next = content[ns..ne].strip_suffix('\r').unwrap_or(&content[ns..ne]);
+            Some(Arc::new(next.to_string()))
+        } else { None };
+
         matches.push(Match {
             line_num: i + 1,
             line: display,
