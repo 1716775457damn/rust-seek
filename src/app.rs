@@ -1,6 +1,5 @@
 use crate::searcher::{search_file, search_filename_with_size, SearchResult};
 use crate::sync_app::SyncApp;
-use crate::annotate_app::AnnotateApp;
 use crate::theme;
 use eframe::egui;
 use egui::{Color32, RichText, ScrollArea, TextEdit, Ui};
@@ -16,7 +15,7 @@ use std::time::{Duration, Instant};
 // ── Tab ───────────────────────────────────────────────────────────────────────
 
 #[derive(PartialEq, Clone, Copy)]
-enum Tab { Search, Sync, Annotate }
+enum Tab { Search, Sync }
 
 // ── SearchApp ─────────────────────────────────────────────────────────────────
 
@@ -528,7 +527,6 @@ pub struct App {
     tab:    Tab,
     search: SearchApp,
     sync:   SyncApp,
-    annotate: AnnotateApp,
     is_dark: bool,
 }
 
@@ -538,7 +536,6 @@ impl Default for App {
             tab:    Tab::Search,
             search: SearchApp::default(),
             sync:   SyncApp::default(),
-            annotate: AnnotateApp::default(),
             is_dark: true,
         }
     }
@@ -562,9 +559,8 @@ impl eframe::App for App {
                 .inner_margin(egui::Margin { left: 10, right: 10, top: 6, bottom: 0 }))
             .show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.tab, Tab::Search,   "🔍 搜索");
-                ui.selectable_value(&mut self.tab, Tab::Sync,     "🔄 同步");
-                ui.selectable_value(&mut self.tab, Tab::Annotate, "📷 截图");
+                ui.selectable_value(&mut self.tab, Tab::Search, "🔍 搜索");
+                ui.selectable_value(&mut self.tab, Tab::Sync,   "🔄 同步");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let (icon, tip) = if self.is_dark { ("☀️", "切换浅色 (T)") } else { ("🌙", "切换深色 (T)") };
                     if ui.add(egui::Button::new(icon).min_size(egui::vec2(28.0, 24.0)))
@@ -579,23 +575,21 @@ impl eframe::App for App {
 
         // Update window title based on active tab
         let title = match self.tab {
-            Tab::Search   => if self.search.searching {
+            Tab::Search => if self.search.searching {
                 "Rust Seek — 搜索中…".to_string()
             } else if !self.search.results.is_empty() {
                 format!("Rust Seek — {}", self.search.status)
             } else {
                 "Rust Seek".to_string()
             },
-            Tab::Sync     => "Rust Seek — 同步".to_string(),
-            Tab::Annotate => "Rust Seek — 截图标注".to_string(),
+            Tab::Sync => "Rust Seek — 同步".to_string(),
         };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
 
         // Route to active tab
         match self.tab {
-            Tab::Search   => self.search.update(ctx),
-            Tab::Sync     => self.sync.update(ctx),
-            Tab::Annotate => self.annotate.update(ctx),
+            Tab::Search => self.search.update(ctx),
+            Tab::Sync   => self.sync.update(ctx),
         }
     }
 }
